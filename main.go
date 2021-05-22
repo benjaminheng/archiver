@@ -14,6 +14,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/go-shiori/go-readability"
+	"gopkg.in/yaml.v2"
 )
 
 // NOTE: regex has an edge case where it won't match a string starting with a
@@ -35,9 +38,9 @@ var (
 
 // Metadata holds metadata about an archived resource.
 type Metadata struct {
-	URL        string    `json:"url"`
-	Title      string    `json:"title"`
-	ArchivedAt time.Time `json:"archived_at"`
+	URL        string    `yaml:"url"`
+	Title      string    `yaml:"title"`
+	ArchivedAt time.Time `yaml:"archived_at"`
 }
 
 // ArchivedResource represents a webpage that has been processed by some form
@@ -78,8 +81,6 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 				fmt.Fprintf(os.Stderr, "cannot get link ID: %v", err)
 			}
 
-			// TODO: check if link ID has been checked before
-
 			// check if link has been archived before
 			destinationPath := path.Join(*outputDir, linkID)
 			_, err = os.Stat(destinationPath)
@@ -88,22 +89,41 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 				a.setLinkChecked(linkID)
 				continue
 			}
-			fmt.Printf("destinationPath = %+v\n", destinationPath)
-			// TODO: process with readability
-			archivedResource := ArchivedResource{
-				URL:      link,
-				Title:    "", // TODO
-				HTMLBody: "", // TODO
+
+			// apply readability
+			article, err := readability.FromURL(link, 5*time.Second)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "apply readability for %+v: %+v\n", link, err)
+				a.setLinkChecked(linkID)
+				continue
 			}
-			_ = archivedResource
+
+			// construct archived file contents
 			metadata := Metadata{
 				URL:        link,
-				Title:      "", // TODO
+				Title:      article.Title,
 				ArchivedAt: time.Now(),
 			}
-			_ = metadata
-			// TODO: write content + metadata to output dir
-			// TODO: interact with cache here to avoid duplicate writes
+			b, err := yaml.Marshal(metadata)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "marshal yaml frontmatter for %+v: %+v\n", link, err)
+				continue
+			}
+			content := fmt.Sprintf("---\n%s\n---\n%s", string(b), article.Content)
+			fmt.Printf("link = %+v\n", link)
+			fmt.Printf("content = %+v\n", content)
+			fmt.Println("-----------------")
+
+			// write content to file
+			// archivedFile, err := os.Create(path.Join(destinationPath, "index.md"))
+			// if err != nil {
+			// 	return err
+			// }
+			// archivedFile.WriteString(content)
+			// archivedFile.Close()
+
+			fmt.Printf("Archived %s\n", link)
+			a.setLinkChecked(linkID)
 		}
 	}
 	return nil
@@ -156,9 +176,6 @@ func (a *Archiver) Archive() error {
 		func(filePath string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
-			}
-			if info.IsDir() {
-				// TODO: directory, recurse
 			}
 			if strings.HasSuffix(filePath, ".md") || strings.HasSuffix(filePath, ".markdown") {
 				err := a.processLinksInMarkdownFile(filePath)
