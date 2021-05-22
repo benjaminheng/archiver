@@ -43,15 +43,6 @@ type Metadata struct {
 	ArchivedAt time.Time `yaml:"archived_at"`
 }
 
-// ArchivedResource represents a webpage that has been processed by some form
-// of readability plugin. A common reference implementation of a readability
-// plugin is https://github.com/mozilla/readability.
-type ArchivedResource struct {
-	URL      string
-	Title    string
-	HTMLBody string
-}
-
 type Archiver struct {
 	InputDir  string
 	OutputDir string
