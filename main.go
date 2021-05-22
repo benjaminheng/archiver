@@ -82,8 +82,8 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 			}
 
 			// check if link has been archived before
-			destinationPath := path.Join(*outputDir, linkID)
-			_, err = os.Stat(destinationPath)
+			linkIDFilePath := path.Join(*outputDir, linkID)
+			_, err = os.Stat(linkIDFilePath)
 			if !os.IsNotExist(err) {
 				// cache file is out of sync with directory structure, update cache
 				a.setLinkChecked(linkID)
@@ -109,18 +109,19 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 				fmt.Fprintf(os.Stderr, "marshal yaml frontmatter for %+v: %+v\n", link, err)
 				continue
 			}
-			content := fmt.Sprintf("---\n%s\n---\n%s", string(b), article.Content)
-			fmt.Printf("link = %+v\n", link)
-			fmt.Printf("content = %+v\n", content)
-			fmt.Println("-----------------")
+			content := fmt.Sprintf("---\n%s\n---\n%s", strings.Trim(string(b), "\n"), article.Content)
 
 			// write content to file
-			// archivedFile, err := os.Create(path.Join(destinationPath, "index.md"))
-			// if err != nil {
-			// 	return err
-			// }
-			// archivedFile.WriteString(content)
-			// archivedFile.Close()
+			err = os.Mkdir(linkIDFilePath, 0755)
+			if err != nil {
+				return err
+			}
+			archivedFile, err := os.Create(path.Join(linkIDFilePath, "index.html"))
+			if err != nil {
+				return err
+			}
+			archivedFile.WriteString(content)
+			archivedFile.Close()
 
 			fmt.Printf("Archived %s\n", link)
 			a.setLinkChecked(linkID)
@@ -188,6 +189,10 @@ func (a *Archiver) Archive() error {
 	if err != nil {
 		return err
 	}
+	err = a.writeCheckedLinkCache()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -197,9 +202,23 @@ func (a *Archiver) setLinkChecked(linkID string) {
 	}
 }
 
+func (a *Archiver) writeCheckedLinkCache() error {
+	cacheFile, err := os.Create(path.Join(*outputDir, ".checked_files.txt"))
+	if err != nil {
+		return err
+	}
+	defer cacheFile.Close()
+	checkedLinks := make([]string, 0, len(a.checkedLinks))
+	for v := range a.checkedLinks {
+		checkedLinks = append(checkedLinks, v)
+	}
+	cacheFile.WriteString(strings.Join(checkedLinks, "\n"))
+	return nil
+}
+
 func (a *Archiver) isLinkCheckedBefore(linkID string) (bool, error) {
 	if a.checkedLinks == nil {
-		cacheFile, err := os.OpenFile(path.Join(*outputDir, ".checked_files.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		cacheFile, err := os.Create(path.Join(*outputDir, ".checked_files.txt"))
 		if err != nil {
 			return false, err
 		}
@@ -221,7 +240,18 @@ func validateArgs() error {
 	if *inputDir == "" || *outputDir == "" {
 		return errors.New("input and output directory must be specified")
 	}
-	// TODO: check if directories exist
+	fileInfo, err := os.Stat(*inputDir)
+	if os.IsNotExist(err) {
+		return errors.New("input does not exist")
+	} else if !fileInfo.IsDir() {
+		return errors.New("input is not a directory")
+	}
+	fileInfo, err = os.Stat(*outputDir)
+	if os.IsNotExist(err) {
+		return errors.New("output does not exist")
+	} else if !fileInfo.IsDir() {
+		return errors.New("output is not a directory")
+	}
 	return nil
 }
 
@@ -236,5 +266,8 @@ func main() {
 		InputDir:  *inputDir,
 		OutputDir: *outputDir,
 	}
-	archiver.Archive()
+	err := archiver.Archive()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
