@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -74,8 +75,15 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "cannot get link ID: %v", err)
 			}
-			fmt.Printf("linkID = %+v\n", linkID)
 
+			// check if link has been archived before
+			destinationPath := path.Join(*outputDir, linkID)
+			_, err = os.Stat(destinationPath)
+			if !os.IsNotExist(err) {
+				continue
+			}
+
+			fmt.Printf("destinationPath = %+v\n", destinationPath)
 			// TODO: check if output path exists to see if it's already been written
 			// TODO: process with readability
 			archivedResource := ArchivedResource{
@@ -163,7 +171,7 @@ func (a *Archiver) Archive() error {
 }
 
 func validateArgs() error {
-	if *inputDir == "" && *outputDir == "" {
+	if *inputDir == "" || *outputDir == "" {
 		return errors.New("input and output directory must be specified")
 	}
 	// TODO: check if directories exist
