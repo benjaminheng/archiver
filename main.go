@@ -31,27 +31,32 @@ type ArchivedResource struct {
 	HTMLBody string
 }
 
-func (a ArchivedResource) GetMetadata() Metadata {
-	return Metadata{
-		URL:        a.URL,
-		Title:      a.URL,
-		ArchivedAt: time.Now(),
-	}
-}
-
 type Archiver struct {
 	InputDir  string
 	OutputDir string
-	// TODO: hold a reference to a cache here
 }
 
 func (a *Archiver) processLinksInMarkdownFile(filePath string) {
 	links := a.parseLinks(filePath)
 	if len(links) > 0 {
-		// TODO: check cache first if it's already been written
-		// TODO: process with readability
-		// TODO: write content + metadata to output dir
-		// TODO: interact with cache here to avoid duplicate writes
+		for _, url := range links {
+			// TODO: check if output path exists to see if it's already been written
+			// TODO: process with readability
+			archivedResource := ArchivedResource{
+				URL:      url,
+				Title:    "", // TODO
+				HTMLBody: "", // TODO
+			}
+			_ = archivedResource
+			metadata := Metadata{
+				URL:        url,
+				Title:      "", // TODO
+				ArchivedAt: time.Now(),
+			}
+			_ = metadata
+			// TODO: write content + metadata to output dir
+			// TODO: interact with cache here to avoid duplicate writes
+		}
 	}
 }
 
