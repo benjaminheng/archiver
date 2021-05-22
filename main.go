@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,6 +73,10 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 				fmt.Fprintf(os.Stderr, "cannot get link ID: %v", err)
 			}
 
+			if a.isLinkCheckedBefore(linkID) {
+				continue
+			}
+
 			// check if link has been archived before
 			linkIDFilePath := path.Join(*outputDir, linkID)
 			_, err = os.Stat(linkIDFilePath)
@@ -84,7 +89,7 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 			// apply readability
 			article, err := readability.FromURL(link, 5*time.Second)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "apply readability for %+v: %+v\n", link, err)
+				fmt.Fprintf(os.Stderr, "cannot apply readability for %+v: %+v\n", link, err)
 				a.setLinkChecked(linkID)
 				continue
 			}
@@ -97,7 +102,7 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 			}
 			b, err := yaml.Marshal(metadata)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "marshal yaml frontmatter for %+v: %+v\n", link, err)
+				fmt.Fprintf(os.Stderr, "cannot marshal yaml frontmatter for %+v: %+v\n", link, err)
 				continue
 			}
 			content := fmt.Sprintf("---\n%s\n---\n%s", strings.Trim(string(b), "\n"), article.Content)
@@ -164,7 +169,11 @@ func parseLinksFromMarkdown(markdown string) (links []string, err error) {
 }
 
 func (a *Archiver) Archive() error {
-	err := filepath.Walk(a.InputDir,
+	err := a.initCheckedLinkCache()
+	if err != nil {
+		return err
+	}
+	err = filepath.Walk(a.InputDir,
 		func(filePath string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -194,7 +203,7 @@ func (a *Archiver) setLinkChecked(linkID string) {
 }
 
 func (a *Archiver) writeCheckedLinkCache() error {
-	cacheFile, err := os.Create(path.Join(*outputDir, ".checked_files.txt"))
+	cacheFile, err := os.OpenFile(path.Join(*outputDir, ".checked_links.txt"), os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -203,20 +212,21 @@ func (a *Archiver) writeCheckedLinkCache() error {
 	for v := range a.checkedLinks {
 		checkedLinks = append(checkedLinks, v)
 	}
+	sort.Strings(checkedLinks)
 	cacheFile.WriteString(strings.Join(checkedLinks, "\n"))
 	return nil
 }
 
-func (a *Archiver) isLinkCheckedBefore(linkID string) (bool, error) {
+func (a *Archiver) initCheckedLinkCache() error {
 	if a.checkedLinks == nil {
-		cacheFile, err := os.Create(path.Join(*outputDir, ".checked_files.txt"))
+		cacheFile, err := os.OpenFile(path.Join(*outputDir, ".checked_links.txt"), os.O_CREATE|os.O_RDONLY, 0644)
 		if err != nil {
-			return false, err
+			return err
 		}
 		defer cacheFile.Close()
 		b, err := io.ReadAll(cacheFile)
 		if err != nil {
-			return false, err
+			return err
 		}
 		links := strings.Split(string(b), "\n")
 		a.checkedLinks = make(map[string]bool)
@@ -224,7 +234,11 @@ func (a *Archiver) isLinkCheckedBefore(linkID string) (bool, error) {
 			a.checkedLinks[v] = true
 		}
 	}
-	return a.checkedLinks[linkID], nil
+	return nil
+}
+
+func (a *Archiver) isLinkCheckedBefore(linkID string) bool {
+	return a.checkedLinks[linkID]
 }
 
 func validateArgs() error {
