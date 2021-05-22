@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -66,17 +69,23 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 		return err
 	}
 	if len(links) > 0 {
-		for _, url := range links {
+		for _, link := range links {
+			linkID, err := getLinkID(link)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cannot get link ID: %v", err)
+			}
+			fmt.Printf("linkID = %+v\n", linkID)
+
 			// TODO: check if output path exists to see if it's already been written
 			// TODO: process with readability
 			archivedResource := ArchivedResource{
-				URL:      url,
+				URL:      link,
 				Title:    "", // TODO
 				HTMLBody: "", // TODO
 			}
 			_ = archivedResource
 			metadata := Metadata{
-				URL:        url,
+				URL:        link,
 				Title:      "", // TODO
 				ArchivedAt: time.Now(),
 			}
@@ -86,6 +95,40 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 		}
 	}
 	return nil
+}
+
+func getLinkID(link string) (string, error) {
+	u, err := url.Parse(link)
+	if err != nil {
+		return "", err
+	}
+
+	// link ID before processing
+	linkID := fmt.Sprintf("%s_%s", u.Host, u.RequestURI())
+
+	// processing:
+	// 1. replace / with _
+	// 2. replace ?= with -
+	// 3. remove any character not in our allowed set
+	linkID = strings.ReplaceAll(linkID, "/", "_")
+	linkID = strings.ReplaceAll(linkID, "?", "-")
+	linkID = strings.ReplaceAll(linkID, "=", "-")
+	r := regexp.MustCompile("[^a-zA-Z0-9_?=.-]+")
+	linkID = r.ReplaceAllString(linkID, "")
+	linkID = strings.TrimRight(linkID, "_")
+
+	// truncate link ID
+	runes := []rune(linkID)
+	if len(runes) > 100 {
+		linkID = string(runes[:100])
+	}
+
+	// append a hash for uniqueness
+	hash := sha256.Sum256([]byte(linkID))
+	truncatedHash := fmt.Sprintf("%x", hash)[:8]
+	linkID = linkID + "_" + truncatedHash
+
+	return linkID, nil
 }
 
 func parseLinksFromMarkdown(markdown string) (links []string, err error) {
