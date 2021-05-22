@@ -52,6 +52,8 @@ type ArchivedResource struct {
 type Archiver struct {
 	InputDir  string
 	OutputDir string
+
+	checkedLinks map[string]bool
 }
 
 func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
@@ -76,15 +78,17 @@ func (a *Archiver) processLinksInMarkdownFile(filePath string) error {
 				fmt.Fprintf(os.Stderr, "cannot get link ID: %v", err)
 			}
 
+			// TODO: check if link ID has been checked before
+
 			// check if link has been archived before
 			destinationPath := path.Join(*outputDir, linkID)
 			_, err = os.Stat(destinationPath)
 			if !os.IsNotExist(err) {
+				// cache file is out of sync with directory structure, update cache
+				a.setLinkChecked(linkID)
 				continue
 			}
-
 			fmt.Printf("destinationPath = %+v\n", destinationPath)
-			// TODO: check if output path exists to see if it's already been written
 			// TODO: process with readability
 			archivedResource := ArchivedResource{
 				URL:      link,
@@ -168,6 +172,32 @@ func (a *Archiver) Archive() error {
 		return err
 	}
 	return nil
+}
+
+func (a *Archiver) setLinkChecked(linkID string) {
+	if a.checkedLinks != nil {
+		a.checkedLinks[linkID] = true
+	}
+}
+
+func (a *Archiver) isLinkCheckedBefore(linkID string) (bool, error) {
+	if a.checkedLinks == nil {
+		cacheFile, err := os.OpenFile(path.Join(*outputDir, ".checked_files.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return false, err
+		}
+		defer cacheFile.Close()
+		b, err := io.ReadAll(cacheFile)
+		if err != nil {
+			return false, err
+		}
+		links := strings.Split(string(b), "\n")
+		a.checkedLinks = make(map[string]bool)
+		for _, v := range links {
+			a.checkedLinks[v] = true
+		}
+	}
+	return a.checkedLinks[linkID], nil
 }
 
 func validateArgs() error {
