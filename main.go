@@ -153,7 +153,7 @@ func getLinkID(link string) (string, error) {
 	}
 
 	// append a hash for uniqueness
-	hash := sha256.Sum256([]byte(linkID))
+	hash := sha256.Sum256([]byte(link))
 	truncatedHash := fmt.Sprintf("%x", hash)[:8]
 	linkID = linkID + "_" + truncatedHash
 
